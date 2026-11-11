@@ -1,0 +1,15 @@
+.plugin_splinductions_note {
+    border-left: 4px solid #0064de;
+    background: #e6f0fd;
+    padding: .5em .8em;
+    margin: 0 0 1em;
+    border-radius: 3px;
+}
+.plugin_splinductions_note ul { margin: .3em 0 0 1.2em; }
+.plugin_splinductions_notify { border-left-color: #d97706; background: #fff7e6; }
+.plugin_splinductions_error { border-left-color: #c62828; background: #fdecea; }
+.plugin_splinductions_small { font-size: 90%; opacity: .8; }
+.plugin_splinductions_status table.inline { width: 100%; }
+
+.plugin_splinductions_new { margin: .5em 0 1.2em; }
+.plugin_splinductions_new .btn { margin: 0 .4em .4em 0; }

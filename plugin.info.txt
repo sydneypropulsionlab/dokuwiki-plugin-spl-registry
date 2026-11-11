@@ -1,0 +1,7 @@
+base   splinductions
+author Brock Cooper
+email  noreply@sydneypropulsionlab.org
+date   2026-11-10
+name   SPL Inductions
+desc   Builds the SPL Inductions bundle (JSON) from approved induction checklist pages tagged "induction" and publishes it as a media file
+url    https://wiki.sydneypropulsionlab.org/whs/inductions/start
