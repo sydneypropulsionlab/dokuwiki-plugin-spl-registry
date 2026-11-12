@@ -1,6 +1,6 @@
 <?php
 
-namespace dokuwiki\plugin\splinductions;
+namespace dokuwiki\plugin\splregistry;
 
 /**
  * An SWP or risk assessment page that induction references resolve against.

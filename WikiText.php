@@ -1,6 +1,6 @@
 <?php
 
-namespace dokuwiki\plugin\splinductions;
+namespace dokuwiki\plugin\splregistry;
 
 /** Inline DokuWiki markup to plain text, and link parsing. */
 class WikiText

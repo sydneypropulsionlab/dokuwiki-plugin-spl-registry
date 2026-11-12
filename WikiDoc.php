@@ -1,6 +1,6 @@
 <?php
 
-namespace dokuwiki\plugin\splinductions;
+namespace dokuwiki\plugin\splregistry;
 
 /**
  * A wiki page split into its title, header table, intro and sections.

@@ -1,0 +1,162 @@
+~~META:title=Record template~~
+{{tag>record-template}}
+<grid>
+<col xs="6">{{:playground:usyd_logo_dark.png?nolink&160|}}</col>
+<col xs="6"><wrapper class="h3">**<Induction Checklist, Preflight Checklist, QC Checklist ...>**</wrapper></col>
+</grid>
+
+====== <Name of the equipment, room, aircraft or process> <induction or checklist> ======
+
+<datatables plain="true" striped="false" header-background="#eef2f5">
+
+^ ID:                | <IND_J11_ROOM_EQUIPMENT, IND_J11_ROOM_SPACE, CHK_UAV_PREFLIGHT ...> ||| **Version:** <badge type="success">@APPROVE_VERSION@</badge> |
+^ Type:              | <induction or checklist> ||| **Issued:** @APPROVE_DATE@ |
+^ Category:          | <any label, e.g. equipment, space, preflight, qc> ||||
+^ Location:          | <J11 ROOM, or -> ||||
+^ SWP:               | <link the SWP, or -> ||||
+^ RA:                | <link the risk assessment, or -> ||||
+^ Requires:          | <link the inductions needed first, or -> ||||
+^ Grants access:     | <rooms or machines it opens, or -> ||||
+^ Outcome:           | <go-nogo, pass-fail or complete, or -> ||||
+^ Refresh (months):  | <12, or 0 for no expiry> ||||
+^ Self-service:      | <yes or no> ||||
+^ Approved by:       | @APPROVE_NAME@ ||||
+
+</datatables>
+
+/*
+TEMPLATE for every record: inductions, preflights, QC checks, inspections. A page made from this
+template gets the record tag instead of record-template, so this page never becomes a record
+itself. The ~~META:title~~ line at the top only names this page in the sitemap; new pages don't
+get it.
+
+Nothing reaches the SPL Registry app until a page is approved. Press Preview to check a page before
+saving: any problem, including a <placeholder> still in the header, shows in a box above the editor.
+Version, Issued and Approved by fill themselves in when the page is approved; don't type over them.
+
+1. Fill in the header (replace every <...>). Only ID and Type are required; put - in any row that
+   doesn't apply.
+   - ID: never change it once records exist. Inductions: IND_<building>_<room>_<EQUIPMENT or SPACE>.
+     Checklists: CHK_<thing>_<purpose>, e.g. CHK_UAV_PREFLIGHT.
+   - Type: how the app runs it.
+       induction  an assessor runs it with one or more people, both sign, the person confirms by
+                  email and gets a certificate. Records who is inducted on what.
+       checklist  someone fills it in and submits it. Records what was checked, by whom, and when.
+   - Category: any label you like. The app makes a filter for every category it sees, so a new
+     one (e.g. "battery") just appears; nothing to set up.
+   - Location, SWP, RA: as for SWPs. SWP and RA also let items attach their text (see References).
+   - Requires: inductions a person must hold before doing this one (or submitting this checklist).
+   - Grants access: inductions only. Comma separated; card readers use the id made from each name
+     (j11-n209b), or write "id: Name" to fix it yourself.
+   - Outcome: checklists only. go-nogo or pass-fail: any failed item makes it No-go / Fail.
+     complete: just records that it was done.
+   - Refresh (months): how long it stays current. Inductions: the default refresh period (the
+     assessor can change it at sign-off). Checklists: when it is next due, e.g. 6 for a 6-monthly
+     inspection. 0 = no expiry.
+   - Self-service: yes if it can be done without an assessor.
+2. Write the one-paragraph description under the header.
+3. Keep the checklist block you want (delete its first line, starting "/* ----------", and its END
+   line), then delete the other blocks. Or write your own sections from scratch.
+
+Items: every item is  [kind] text {options}
+  Kinds
+  * [ ] or [check]   covered and explained; ticked by the assessor (or the person, if self-service)
+  * [demo]           demonstrated by the person; ticked by the assessor
+  * [ack]            acknowledged by the person; ticked on their own phone
+  (inductions use [ ], [demo] and [ack]; checklists use everything except [demo])
+  * [pass]           Pass / Fail / N/A
+  * [num MIN-MAX U]  a reading, e.g. [num 25.0-25.2 V]; outside the range counts as a fail
+  * [select A|B|C]   pick one, e.g. [select Clear|Light rain|Windy!]; a choice ending in ! is a fail
+  * [text]           a short answer
+  * [rich]           a longer formatted answer (notes, flight log)
+  * [photo]          a photo is the answer
+  * text             information only, not ticked
+  Options (any kind, as many as you like, after the text)
+  {photo}            a photo can be attached
+  {photo!}           a photo must be attached
+  {comment}          a comment box
+  {comment on fail}  a comment is required when the item fails
+  {optional}         the item can be left blank
+
+References attach SWP or RA text to an item. Link the page with a label that starts with intro,
+hazard:, step, section:, risk: or emergency:, e.g. ([[whs:swp:swp-002|hazard: Burns]]).
+*/
+
+<One paragraph shown at the top when someone starts it, e.g. "Practical induction on the ... in ROOM." or "Preflight checks for ... before every flight.">
+
+/* ---------- EQUIPMENT INDUCTION: delete this line and the END line to use it ----------
+
+===== Before you start =====
+
+  * [ ] Has read the SWP and knows where to find it ([[whs:swp:PAGE|intro]])
+  * [ack] I will not use this equipment unsupervised until this induction is confirmed
+
+===== Hazards =====
+
+  * [ ] First hazard to cover ([[whs:swp:PAGE|hazard: Name of the hazard]])
+  * [ ] Second hazard to cover ([[whs:swp:PAGE|hazard: Name of the hazard]])
+
+===== Demonstrated =====
+
+  * [demo] Pre-start inspection ([[whs:swp:PAGE|step 1]])
+  * [demo] First practical task ([[whs:swp:PAGE|step 2]])
+
+===== Waste and clean-up =====
+
+  * [ ] Where waste goes and how to leave the machine ([[whs:swp:PAGE|section: Clean up]])
+
+===== Emergencies =====
+
+  * [ ] How to stop and isolate the machine ([[whs:swp:PAGE|section: Emergency shutdown]])
+  * [ack] I will report hazards, damage and near misses
+
+---------- END EQUIPMENT INDUCTION */
+
+/* ---------- SPACE INDUCTION: delete this line and the END line to use it ----------
+
+===== General =====
+
+  * [ ] Local safety contacts, and where the First Aid Officers and Emergency Warden are listed
+  * [ ] How to report maintenance issues with buildings and grounds (Campus Assist)
+  * [ack] I will comply with local WHS rules and procedures.
+
+===== Emergencies =====
+
+  * [ ] Building alarm tones and what to do for each
+  * [ ] Nearest fire exits and the emergency assembly point
+  * [ ] First aid kit, eyewash and fire extinguisher locations {photo}
+  * [ ] Reporting emergencies and security threats to Sydney Campus Security: 9351 3333
+  * [ack] All incidents must be recorded in RiskWare within 24 hours.
+
+===== Hazards in this room =====
+
+  * [ ] The main WHS risks in the room
+  * [ ] Personal protective equipment required in the room, and where to get it
+  * [ ] Safe work procedures relevant to the person's work
+
+===== Room rules =====
+
+  * [ack] I will keep the room clean and leave my work area clear for the next user.
+  * [ack] I will not use any equipment in this room until I have completed its induction.
+
+---------- END SPACE INDUCTION */
+
+/* ---------- CHECKLIST (preflight, QC, inspection): delete this line and the END line to use it ----------
+
+===== Before you start =====
+
+  * [select Clear|Light rain|Windy!|Other] Conditions {comment}
+  * [text] Serial number or ID of the item being checked
+
+===== Checks =====
+
+  * [pass] First visual check, e.g. no cracks or loose fasteners {photo} {comment on fail}
+  * [num 25.0-25.2 V] First reading, e.g. battery voltage
+  * [pass] First functional check {comment on fail}
+  * [photo] Overall photo of the item
+
+===== Notes =====
+
+  * [rich] Notes, e.g. flight log, batteries used, anything unusual {optional}
+
+---------- END CHECKLIST */

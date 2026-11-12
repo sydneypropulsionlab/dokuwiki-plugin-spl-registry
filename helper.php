@@ -2,26 +2,41 @@
 
 use dokuwiki\Extension\Plugin;
 use dokuwiki\File\PageResolver;
-use dokuwiki\plugin\splinductions\Builder;
+use dokuwiki\plugin\splregistry\Builder;
 
 /**
- * SPL Inductions: builds the induction bundle from approved induction pages and publishes it
- * as a media file the SPL Inductions app pulls from.
+ * SPL Registry: builds the registry bundle from approved record pages (inductions and
+ * checklists) and publishes it as a media file the SPL Registry app pulls from. The induction
+ * bundle older versions of the app read is published alongside it.
  */
-class helper_plugin_splinductions extends Plugin
+class helper_plugin_splregistry extends Plugin
 {
     /** @var array|null approve plugin rows cache */
     protected ?array $approvedCache = null;
 
     // ----------------------------------------------------------------- settings
+    /** The tag that makes a page a record, wherever it is in the wiki. */
     public function tag(): string
     {
-        return strtolower(trim($this->getConf('tag'))) ?: 'induction';
+        return strtolower(trim($this->getConf('tag'))) ?: 'record';
     }
 
+    /** @return string[] */
+    public function tags(): array
+    {
+        return [$this->tag()];
+    }
+
+    /** Where the registry bundle (format 2) is published. */
+    public function registryMediaId(): string
+    {
+        return cleanID($this->getConf('registry_media_id'));
+    }
+
+    /** Where the induction bundle (format 1, for app versions before 0.13) is published, or '' for none. */
     public function mediaId(): string
     {
-        return cleanID($this->getConf('media_id'));
+        return $this->getConf('legacy_bundle') ? cleanID($this->getConf('media_id')) : '';
     }
 
     protected function nsList(string $key): array
@@ -34,9 +49,9 @@ class helper_plugin_splinductions extends Plugin
         return (bool)$this->getConf('require_approval');
     }
 
-    public function bundleUrl(): string
+    public function bundleUrl(?string $id = null): string
     {
-        return ml($this->mediaId(), '', true, '&', true);
+        return ml($id ?? $this->registryMediaId(), '', true, '&', true);
     }
 
     // ----------------------------------------------------------------- reading pages
@@ -99,11 +114,11 @@ class helper_plugin_splinductions extends Plugin
 
     protected function builder(?callable $read = null): Builder
     {
-        $b = new Builder($read ?? fn($id) => $this->publishedRevision($id), $this->resolver(), $this->tag(),
+        $b = new Builder($read ?? fn($id) => $this->publishedRevision($id), $this->resolver(), $this->tags(),
             $this->nsList('swp_namespaces'), $this->nsList('ra_namespaces'), fn($id) => $this->sourceRevision($id));
         $b->exists = fn($id) => page_exists($id);
-        // what the app has now: used to catch a changed Induction ID or a dropped access id
-        foreach ($this->publishedBundle()['inductions'] ?? [] as $old) {
+        // what the app has now: used to catch a changed ID or a dropped access id
+        foreach ($this->publishedRecords() as $old) {
             $page = $old['wiki']['page'] ?? ($old['page'] ?? '');
             if ($page === '') continue;
             $b->knownIds[$page] = $old['id'];
@@ -124,72 +139,32 @@ class helper_plugin_splinductions extends Plugin
         return ['text' => rawWiki($id), 'rev' => (int)@filemtime(wikiFN($id)), 'version' => 'draft'];
     }
 
-    // ----------------------------------------------------------------- new pages
-    /**
-     * The next free induction page: the highest number used so far in the namespace plus one.
-     * Pages that were deleted still count (their history remains), so a number is never reused.
-     */
-    public function nextPageId(): string
+    /** @return string[] tags a template page carries instead of the record tag */
+    public function templateTags(): array
     {
-        $ns = trim((string)$this->getConf('namespace'), ': ');
-        // not cleanID(): it would strip the trailing - from ind-
-        $prefix = preg_replace('/[^a-z0-9_.-]/', '', strtolower((string)$this->getConf('page_prefix'))) ?: 'ind-';
-        $max = 0;
-        $re = '/^' . preg_quote($prefix, '/') . '(\d+)\.(txt|changes|meta)$/';
-        foreach ([dirname(wikiFN("$ns:x")), dirname(metaFN("$ns:x", '.changes'))] as $dir) {
-            foreach (@scandir($dir) ?: [] as $f) {
-                if (preg_match($re, $f, $m)) $max = max($max, (int)$m[1]);
-            }
-        }
-        return cleanID(($ns !== '' ? "$ns:" : '') . $prefix . str_pad((string)($max + 1), 3, '0', STR_PAD_LEFT));
-    }
-
-    /** Tag the template page carries instead of the induction tag. */
-    public function templateTag(): string
-    {
-        return strtolower(trim((string)$this->getConf('template_tag'))) ?: 'induction-template';
+        $tags = preg_split('/[\s,]+/', strtolower(trim((string)$this->getConf('template_tag'))));
+        return array_values(array_filter($tags, 'strlen')) ?: ['record-template'];
     }
 
     // ----------------------------------------------------------------- candidates
-    /** Namespace templates (c_template, i_template, _template) never count as inductions. */
+    /** Namespace templates (c_template, i_template, _template) never count as records. */
     public function isTemplate(string $id): bool
     {
         $re = trim((string)$this->getConf('ignore_pages'));
         return $re !== '' && @preg_match('/' . str_replace('/', '\\/', $re) . '/', $id) === 1;
     }
 
-    /** True when the page is inside the induction namespace (or no namespace is set). */
-    public function inNamespace(string $id): bool
-    {
-        $ns = trim((string)$this->getConf('namespace'), ': ');
-        return $ns === '' || str_starts_with($id, $ns . ':');
-    }
-
     /**
-     * Pages that are, or recently were, tagged as inductions inside the induction namespace: the
-     * tag index, a scan of the namespace, and pages already in the published bundle (so removing a
-     * tag is noticed). The same tag used elsewhere in the wiki (e.g. FabLab pages) is ignored.
+     * Pages that are, or recently were, records: pages tagged with the record tag (a record page is
+     * indexed as soon as it is saved), and pages in the last build (so removing a tag is noticed).
      */
     public function candidates(): array
     {
-        global $conf;
         $ids = [];
         try {
             $tag = $this->tag();   // lookupKey takes its value by reference
-            foreach (idx_get_indexer()->lookupKey('subject', $tag) as $id) {
-                if ($this->inNamespace($id)) $ids[$id] = true;
-            }
+            foreach (idx_get_indexer()->lookupKey('subject', $tag) as $id) $ids[$id] = true;
         } catch (\Throwable $e) {
-        }
-        $ns = trim((string)$this->getConf('namespace'), ': ');
-        if ($ns !== '') {
-            $data = [];
-            search($data, $conf['datadir'], 'search_allpages', ['depth' => 0, 'skipacl' => true],
-                str_replace(':', '/', $ns));
-            foreach ($data as $d) {
-                // the tag index can lag behind a save, so look at the text itself
-                if (!isset($ids[$d['id']]) && $this->isInductionText(rawWiki($d['id']))) $ids[$d['id']] = true;
-            }
         }
         foreach (($this->status()['pages'] ?? []) as $id => $_) $ids[$id] = true;
         $out = [];
@@ -205,7 +180,7 @@ class helper_plugin_splinductions extends Plugin
     protected function statusFile(): string
     {
         global $conf;
-        return $conf['metadir'] . '/splinductions.status.json';
+        return $conf['metadir'] . '/splregistry.status.json';
     }
 
     public function status(): array
@@ -227,7 +202,8 @@ class helper_plugin_splinductions extends Plugin
      */
     public function fingerprint(): string
     {
-        $parts = [$this->getPluginVersion(), $this->tag(), $this->mediaId(), (int)$this->requireApproval(),
+        $parts = [$this->getPluginVersion(), implode(',', $this->tags()), $this->registryMediaId(), $this->mediaId(),
+            (int)$this->requireApproval(),
             implode(',', $this->candidates())];
         if ($this->requireApproval()) {
             foreach ($this->approvedRows() as $page => $row) $parts[] = "$page@{$row['rev']}";
@@ -248,12 +224,12 @@ class helper_plugin_splinductions extends Plugin
     // ----------------------------------------------------------------- building and publishing
     /**
      * Rebuild the bundle from published (approved) revisions and publish it if it changed.
-     * A failed build leaves the last good bundle in place.
+     * A page that fails to build keeps the version the app already has.
      */
     public function rebuild(string $reason = '', bool $force = false): array
     {
         global $conf;
-        $lock = @fopen($conf['lockdir'] . '/splinductions.lock', 'c');
+        $lock = @fopen($conf['lockdir'] . '/splregistry.lock', 'c');
         if ($lock) flock($lock, LOCK_EX);
         try {
             $this->approvedCache = null;
@@ -262,7 +238,7 @@ class helper_plugin_splinductions extends Plugin
             if (!$force && ($status['fingerprint'] ?? '') === $fp) return $status;
 
             $b = $this->builder();
-            $bundle = $b->build($this->candidates());
+            $records = $b->build($this->candidates());
             $now = date('c');
             $status['checked_at'] = $now;
             $status['reason'] = $reason;
@@ -270,43 +246,59 @@ class helper_plugin_splinductions extends Plugin
             $status['errors'] = $b->errors;
             $status['warnings'] = $b->warnings;
             $status['skipped'] = $b->skipped;
-            $status['media_id'] = $this->mediaId();
+            $status['media_id'] = $this->registryMediaId();
             $status['ok'] = !$b->errors;
 
             // A page that can't be built keeps the version the app already has (if any).
             $previous = [];
-            foreach ($this->publishedBundle()['inductions'] ?? [] as $old) {
+            foreach ($this->publishedRecords() as $old) {
                 $page = $old['wiki']['page'] ?? ($old['page'] ?? '');
                 if ($page !== '') $previous[$page] = $old;
             }
-            $inductions = $bundle['inductions'];
             $held = [];
             foreach ($b->failed as $page) {
                 if (isset($previous[$page])) {
-                    $inductions[] = $previous[$page];
-                    $held[$page] = $previous[$page];
+                    $records[] = $previous[$page];
+                    $held[$page] = true;
                 }
             }
-            $bundle = Builder::bundle($inductions);
+            $bundle = Builder::bundle($records);
 
             $pages = [];
-            foreach ($bundle['inductions'] as $ind) {
-                $page = $ind['wiki']['page'] ?? $ind['page'];
-                $pages[$page] = ['id' => $ind['id'], 'title' => $ind['title'], 'version' => $ind['version'],
-                    'rev' => $ind['wiki']['rev'] ?? 0, 'wiki_version' => $ind['wiki']['version'] ?? '',
+            foreach (array_merge($bundle['inductions'], $bundle['checklists']) as $rec) {
+                $page = $rec['wiki']['page'] ?? $rec['page'];
+                $pages[$page] = ['id' => $rec['id'], 'title' => $rec['title'], 'version' => $rec['version'],
+                    'type' => $rec['record_type'] ?? 'induction', 'category' => $rec['category'] ?? '',
+                    'rev' => $rec['wiki']['rev'] ?? 0, 'wiki_version' => $rec['wiki']['version'] ?? '',
                     'held' => isset($held[$page])];
             }
             $status['pages'] = $pages;
             $status['failed_pages'] = $b->failed;
-            if (!$bundle['inductions']) {
-                $status['errors'][] = 'No approved induction pages yet, so there is nothing to publish.';
+            if (!$pages) {
+                $status['errors'][] = 'No approved record pages yet, so there is nothing to publish.';
                 $status['ok'] = false;
-            } elseif (($status['hash'] ?? '') !== $bundle['hash'] || !file_exists(mediaFN($this->mediaId()))) {
-                $bundle['wiki'] = DOKU_URL;
-                $this->publish($bundle);
-                $status['hash'] = $bundle['hash'];
-                $status['published_at'] = $now;
-                $status['count'] = count($bundle['inductions']);
+            } else {
+                $regId = $this->registryMediaId();
+                if (($status['hash'] ?? '') !== $bundle['hash'] || !file_exists(mediaFN($regId))) {
+                    $bundle['wiki'] = DOKU_URL;
+                    $this->publish($regId, $bundle, sprintf('Registry bundle %s (%d inductions, %d checklists)',
+                        $bundle['hash'], count($bundle['inductions']), count($bundle['checklists'])));
+                    $status['hash'] = $bundle['hash'];
+                    $status['published_at'] = $now;
+                }
+                $status['count'] = count($pages);
+                $status['count_inductions'] = count($bundle['inductions']);
+                $status['count_checklists'] = count($bundle['checklists']);
+                // the format 1 bundle, for app versions that read inductions.json
+                $legacyId = $this->mediaId();
+                $legacy = Builder::legacyBundle($records);
+                if ($legacyId !== '' && $legacy['inductions']
+                    && (($status['legacy_hash'] ?? '') !== $legacy['hash'] || !file_exists(mediaFN($legacyId)))) {
+                    $legacy['wiki'] = DOKU_URL;
+                    $this->publish($legacyId, $legacy, sprintf('Induction bundle %s (%d inductions)',
+                        $legacy['hash'], count($legacy['inductions'])));
+                    $status['legacy_hash'] = $legacy['hash'];
+                }
             }
             $this->saveStatus($status);
             return $status;
@@ -318,20 +310,28 @@ class helper_plugin_splinductions extends Plugin
         }
     }
 
-    /** The bundle currently published, or [] when there is none. */
+    /** The bundle currently published: the registry bundle, or the induction bundle before there was one. */
     public function publishedBundle(): array
     {
-        $fn = mediaFN($this->mediaId());
-        if (!file_exists($fn)) return [];
-        $b = json_decode((string)io_readFile($fn, false), true);
-        return is_array($b) ? $b : [];
+        foreach ([$this->registryMediaId(), $this->mediaId()] as $id) {
+            if ($id === '' || !file_exists($fn = mediaFN($id))) continue;
+            $b = json_decode((string)io_readFile($fn, false), true);
+            if (is_array($b)) return $b;
+        }
+        return [];
     }
 
-    /** Write the bundle as a media file, keeping the old one as a media revision. */
-    protected function publish(array $bundle): void
+    /** Every record in the published bundle. */
+    public function publishedRecords(): array
+    {
+        $b = $this->publishedBundle();
+        return array_merge($b['inductions'] ?? [], $b['checklists'] ?? []);
+    }
+
+    /** Write a bundle as a media file, keeping the old one as a media revision. */
+    protected function publish(string $id, array $bundle, string $summary): void
     {
         global $conf;
-        $id = $this->mediaId();
         $fn = mediaFN($id);
         $json = json_encode($bundle, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
         $old = @filemtime($fn);
@@ -345,14 +345,13 @@ class helper_plugin_splinductions extends Plugin
         rename($tmp, $fn);
         @clearstatcache(true, $fn);
         chmod($fn, $conf['fmode']);
-        addMediaLogEntry(@filemtime($fn), $id, $old ? DOKU_CHANGE_TYPE_EDIT : DOKU_CHANGE_TYPE_CREATE,
-            sprintf('Induction bundle %s (%d inductions)', $bundle['hash'], count($bundle['inductions'])),
+        addMediaLogEntry(@filemtime($fn), $id, $old ? DOKU_CHANGE_TYPE_EDIT : DOKU_CHANGE_TYPE_CREATE, $summary,
             '', null, filesize($fn) - $sizeOld);
     }
 
     /**
-     * Check a page as it is being saved: build every induction as it will be published, but
-     * with this page's new text. Returns [errors, warnings, induction or null].
+     * Check a page as it is being saved: build every record as it will be published, but
+     * with this page's new text. Returns [errors, warnings, record or null].
      */
     public function checkDraft(string $page, string $text): array
     {
@@ -368,8 +367,9 @@ class helper_plugin_splinductions extends Plugin
             $b->byPage[$page] ?? null];
     }
 
-    public function isInductionText(string $text): bool
+    /** True when the text is tagged as a record. */
+    public function isRecordText(string $text, ?string $id = null): bool
     {
-        return in_array($this->tag(), \dokuwiki\plugin\splinductions\WikiText::tags($text), true);
+        return in_array($this->tag(), \dokuwiki\plugin\splregistry\WikiText::tags($text), true);
     }
 }

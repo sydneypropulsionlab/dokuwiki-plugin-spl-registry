@@ -9,9 +9,10 @@ use dokuwiki\Extension\EventHandler;
  *  - right after a page is approved (the approve plugin redirects, so this runs at shutdown);
  *  - in the background task runner whenever approvals or tagged pages have changed (a safety net
  *    that also catches deletions, moves and approvals made any other way).
- * On save, an induction page is checked as a draft and the editor sees any problems at once.
+ * On save, a record page (induction or checklist) is checked as a draft and the editor sees any
+ * problems at once.
  */
-class action_plugin_splinductions extends ActionPlugin
+class action_plugin_splregistry extends ActionPlugin
 {
     public function register(EventHandler $controller)
     {
@@ -20,20 +21,19 @@ class action_plugin_splinductions extends ActionPlugin
         $controller->register_hook('ACTION_ACT_PREPROCESS', 'BEFORE', $this, 'handleApprove', null, -100);
         $controller->register_hook('INDEXER_TASKS_RUN', 'BEFORE', $this, 'handleTaskRunner');
         $controller->register_hook('TPL_ACT_RENDER', 'BEFORE', $this, 'handlePageStatus');
-        $controller->register_hook('ACTION_ACT_PREPROCESS', 'BEFORE', $this, 'handleNewInduction');
         $controller->register_hook('COMMON_PAGETPL_LOAD', 'AFTER', $this, 'handleTemplate');
     }
 
-    protected function helper(): helper_plugin_splinductions
+    protected function helper(): helper_plugin_splregistry
     {
-        return plugin_load('helper', 'splinductions');
+        return plugin_load('helper', 'splregistry');
     }
 
     protected function isWatched(string $id, string $text): bool
     {
         $h = $this->helper();
-        if ($h->isTemplate($id) || !$h->inNamespace($id)) return false;
-        return $h->isInductionText($text) || isset($h->status()['pages'][$id]);
+        if ($h->isTemplate($id)) return false;
+        return $h->isRecordText($text, $id) || isset($h->status()['pages'][$id]);
     }
 
     public function handleSave(Event $event)
@@ -41,20 +41,20 @@ class action_plugin_splinductions extends ActionPlugin
         $id = $event->data['id'];
         $text = (string)$event->data['newContent'];
         $h0 = $this->helper();
-        if ($h0->inNamespace($id)) {
+        if ($h0->isRecordText($text, $id) || isset($h0->status()['pages'][$id])) {
             // update the search and tag index now rather than on a later page view, so a new or
-            // retagged page shows in the induction list straight away
+            // retagged page shows in record lists straight away
             register_shutdown_function(function () use ($id) {
                 try {
                     (new \dokuwiki\Search\Indexer())->addPage($id, true);
                 } catch (\Throwable $e) {
-                    \dokuwiki\Logger::error('splinductions: indexing failed', $e->getMessage());
+                    \dokuwiki\Logger::error('splregistry: indexing failed', $e->getMessage());
                 }
             });
         }
         if (!$this->isWatched($id, $text)) return;
         $h = $this->helper();
-        if (!$h->isInductionText($text)) {
+        if (!$h->isRecordText($text, $id)) {
             msg(sprintf($this->getLang('untagged'), $h->tag()), 2);
             return;
         }
@@ -78,8 +78,8 @@ class action_plugin_splinductions extends ActionPlugin
         $text = con((string)$PRE, (string)$TEXT, (string)$SUF);
         if (!$this->isWatched($ID, $text)) return;
         $h = $this->helper();
-        if (!$h->isInductionText($text)) {
-            echo '<div class="plugin_splinductions_note plugin_splinductions_notify"><strong>'
+        if (!$h->isRecordText($text, $ID)) {
+            echo '<div class="plugin_splregistry_note plugin_splregistry_notify"><strong>'
                 . $this->getLang('preview_heading') . '</strong> ' . sprintf($this->getLang('untagged'), hsc($h->tag()))
                 . '</div>';
             return;
@@ -87,7 +87,7 @@ class action_plugin_splinductions extends ActionPlugin
         try {
             [$errors, $warnings, $ind] = $h->checkDraft($ID, $text);
         } catch (\Throwable $e) {
-            echo '<div class="plugin_splinductions_note plugin_splinductions_error"><strong>'
+            echo '<div class="plugin_splregistry_note plugin_splregistry_error"><strong>'
                 . $this->getLang('preview_heading') . '</strong> ' . hsc($e->getMessage()) . '</div>';
             return;
         }
@@ -102,68 +102,52 @@ class action_plugin_splinductions extends ActionPlugin
             $cls = 'info';
             $msg = $this->getLang('preview_ok');
         }
-        echo '<div class="plugin_splinductions_note plugin_splinductions_' . $cls . '">';
+        echo '<div class="plugin_splregistry_note plugin_splregistry_' . $cls . '">';
         echo '<strong>' . $this->getLang('preview_heading') . '</strong> ' . $msg;
         foreach ([[$errors, ''], [$warnings, $errors ? $this->getLang('page_warnings') : '']] as [$items, $head]) {
             if (!$items) continue;
-            if ($head !== '') echo '<div class="plugin_splinductions_small">' . $head . '</div>';
+            if ($head !== '') echo '<div class="plugin_splregistry_small">' . $head . '</div>';
             echo '<ul>';
             foreach ($items as $m) echo '<li>' . hsc($strip($m)) . '</li>';
             echo '</ul>';
         }
         if ($ind && !$errors) {
-            $items = 0;
             $refs = 0;
-            $kinds = ['check' => 0, 'demo' => 0, 'ack' => 0, 'info' => 0];
+            $kinds = [];
             foreach ($ind['sections'] as $s) {
                 foreach ($s['items'] as $it) {
-                    $items++;
-                    $kinds[$it['kind']]++;
+                    $kinds[$it['kind']] = ($kinds[$it['kind']] ?? 0) + 1;
                     $refs += count($it['refs']);
                 }
             }
-            echo '<div class="plugin_splinductions_small">' . sprintf($this->getLang('preview_summary'),
-                    hsc($ind['id']), count($ind['sections']), $kinds['check'], $kinds['demo'], $kinds['ack'],
-                    $kinds['info'], $refs) . '</div>';
+            $parts = [];
+            foreach ($kinds as $k => $n) $parts[] = sprintf($this->getLang('kind_' . $k) ?: "%d $k", $n);
+            $what = ($ind['record_type'] ?? 'induction') === 'checklist'
+                ? sprintf($this->getLang('preview_checklist'), hsc(implode(' / ', (array)($ind['outcome'] ?? ['Complete']))))
+                : $this->getLang('preview_induction');
+            echo '<div class="plugin_splregistry_small">' . sprintf($this->getLang('preview_summary'),
+                    hsc($ind['id']), $what, hsc(($ind['category'] ?? '') !== '' ? $ind['category'] : '-'),
+                    count($ind['sections']), implode(', ', $parts), $refs) . '</div>';
         }
         echo '</div>';
     }
 
     /**
-     * ?do=newinduction : work out the next free ind-NNN now (not when the button was drawn, so two
-     * people can't get the same number) and open it in the editor. The new page starts from the
-     * namespace template (c_template, via the templatepagename plugin).
-     */
-    public function handleNewInduction(Event $event)
-    {
-        if ($event->data !== 'newinduction') return;
-        $event->preventDefault();
-        $event->stopPropagation();
-        $new = $this->helper()->nextPageId();
-        if (auth_quickaclcheck($new) < AUTH_CREATE) {
-            msg($this->getLang('new_denied'), -1);
-            $event->data = 'show';
-            return;
-        }
-        send_redirect(wl($new, ['do' => 'edit'], true, '&'));
-    }
-
-    /**
-     * The template page is tagged with the template tag (induction-template), so it shows in the
-     * sitemap but not in induction lists and never becomes an induction itself. A new page made
-     * from it gets the real induction tag instead.
+     * The template page is tagged with a template tag (record-template), so it shows in the
+     * sitemap but not in record lists and never becomes a record itself. A new page made from it
+     * gets the real record tag instead.
      */
     public function handleTemplate(Event $event)
     {
         $h = $this->helper();
         $id = (string)$event->data['id'];
-        if (!$h->inNamespace($id) || $h->isTemplate($id)) return;
-        $from = preg_quote($h->templateTag(), '/');
+        if ($h->isTemplate($id)) return;
+        $from = implode('|', array_map(fn($t) => preg_quote($t, '/'), $h->templateTags()));
         // the template's own title (~~META:title=c_template~~) is for the template page only
         $event->data['tpl'] = preg_replace('/^[ \t]*~~META:title\s*=[^\n]*~~[ \t]*\r?\n?/mi', '',
             (string)$event->data['tpl']);
         $event->data['tpl'] = preg_replace_callback('/\{\{tag>([^}]*)\}\}/i', function ($m) use ($from, $h) {
-            return '{{tag>' . preg_replace('/(^|\s)' . $from . '(?=\s|$)/i', '${1}' . $h->tag(), $m[1]) . '}}';
+            return '{{tag>' . preg_replace('/(^|\s)(?:' . $from . ')(?=\s|$)/i', '${1}' . $h->tag(), $m[1]) . '}}';
         }, (string)$event->data['tpl']);
     }
 
@@ -176,7 +160,7 @@ class action_plugin_splinductions extends ActionPlugin
             try {
                 $h->rebuild("approved $ID");
             } catch (\Throwable $e) {
-                \dokuwiki\Logger::error('splinductions: rebuild after approval failed', $e->getMessage());
+                \dokuwiki\Logger::error('splregistry: rebuild after approval failed', $e->getMessage());
             }
         });
     }
@@ -192,11 +176,11 @@ class action_plugin_splinductions extends ActionPlugin
         try {
             $h->rebuild('background check');
         } catch (\Throwable $e) {
-            \dokuwiki\Logger::error('splinductions: background rebuild failed', $e->getMessage());
+            \dokuwiki\Logger::error('splregistry: background rebuild failed', $e->getMessage());
         }
     }
 
-    /** A short note above an induction page: is this revision what the app is using? */
+    /** A short note above a record page: is this revision what the app is using? */
     public function handlePageStatus(Event $event)
     {
         global $ID, $INFO;
@@ -206,11 +190,11 @@ class action_plugin_splinductions extends ActionPlugin
         }
         if ($event->data !== 'show' || !page_exists($ID)) return;
         $h = $this->helper();
-        if ($h->isTemplate($ID) || !$h->inNamespace($ID)) return;
+        if ($h->isTemplate($ID)) return;
         $status = $h->status();
         $pub = $status['pages'][$ID] ?? null;
         $failed = in_array($ID, $status['failed_pages'] ?? [], true);
-        if (!$pub && !$failed && !$h->isInductionText(rawWiki($ID))) return;
+        if (!$pub && !$failed && !$h->isRecordText(rawWiki($ID), $ID)) return;
 
         $mine = fn($m) => str_starts_with($m, "$ID: ");
         $errs = array_values(array_filter($status['errors'] ?? [], $mine));
@@ -228,11 +212,11 @@ class action_plugin_splinductions extends ActionPlugin
             $cls = 'notify';
             $msg = $h->requireApproval() ? $this->getLang('page_not_approved') : $this->getLang('page_not_published');
         }
-        echo '<div class="plugin_splinductions_note plugin_splinductions_' . $cls . '">';
+        echo '<div class="plugin_splregistry_note plugin_splregistry_' . $cls . '">';
         echo '<strong>' . $this->getLang('page_heading') . '</strong> ' . $msg;
         $list = function ($items, $heading) use ($ID) {
             if (!$items) return;
-            if ($heading !== '') echo '<div class="plugin_splinductions_small">' . $heading . '</div>';
+            if ($heading !== '') echo '<div class="plugin_splregistry_small">' . $heading . '</div>';
             echo '<ul>';
             foreach ($items as $e) echo '<li>' . hsc(substr($e, strlen($ID) + 2)) . '</li>';
             echo '</ul>';

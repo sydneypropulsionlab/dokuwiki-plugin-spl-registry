@@ -1,10 +1,10 @@
 <?php
-$lang['tag'] = 'Tag that marks a page as an induction checklist';
-$lang['namespace'] = 'Namespace induction pages must be in. Tagged pages elsewhere are ignored. Empty: the whole wiki.';
+$lang['tag'] = 'Tag that makes a page a record (an induction or a checklist), anywhere in the wiki';
 $lang['swp_namespaces'] = 'Namespaces of Safe Work Procedure pages that references can point at (space separated)';
 $lang['ra_namespaces'] = 'Namespaces of risk assessment pages that references can point at (space separated)';
-$lang['media_id'] = 'Media file the bundle is published to; the SPL Inductions app downloads it from here';
-$lang['ignore_pages'] = 'Pages never treated as inductions, as a regular expression on the page id (the templatepagename templates by default)';
+$lang['registry_media_id'] = 'Media file the registry bundle (inductions and checklists) is published to; the SPL Registry app downloads it from here';
+$lang['media_id'] = 'Media file the induction-only bundle is published to, for app versions before 0.13';
+$lang['legacy_bundle'] = 'Also publish the induction-only bundle (turn off once the app reads the registry bundle)';
+$lang['ignore_pages'] = 'Pages never treated as records, as a regular expression on the page id (the templatepagename templates by default)';
 $lang['require_approval'] = 'Build only from approved revisions (approve plugin). Off: build from the current revisions.';
-$lang['page_prefix'] = 'New induction pages are named this plus the next free 3-digit number (ind-004, ind-005, ...)';
-$lang['template_tag'] = 'Tag on the template page (c_template). New induction pages made from it get the induction tag instead, so the template shows in the sitemap but never in induction lists.';
+$lang['template_tag'] = 'Tags on template pages (space separated). A page made from a template gets the record tag instead, so templates show in the sitemap but never become records.';
